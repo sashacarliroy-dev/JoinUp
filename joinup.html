@@ -6,6 +6,7 @@
 <title>JoinUp — Don't cancel. Complete your group.</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <style>
   :root{
     --ink:#14162B; --ink2:#2A2D45; --paper:#FFFFFF; --mist:#F3F4F8; --mist2:#E7E9F0;
@@ -287,13 +288,20 @@
   <div class="nav-pills" id="nav-pills"></div>
   <div class="nav-right">
     <select class="lang-select" onchange="setLang(this.value)" id="lang-select-desktop"></select>
-    <img class="nav-avatar" src="https://i.pravatar.cc/100?img=12" onclick="go('profile')">
+    <div id="auth-slot-desktop"></div>
   </div>
 </nav>
 
 <main id="page-root" style="min-height:100vh; padding-bottom:88px;"></main>
 
 <nav id="bottomnav" class="hide-desktop"></nav>
+<div id="auth-slot-mobile" class="hide-desktop" style="position:fixed; top:14px; right:70px; z-index:35;"></div>
+
+<div id="auth-overlay" onclick="if(event.target===this) closeAuthModal()" style="position:fixed; inset:0; z-index:45; display:none; align-items:center; justify-content:center; background:rgba(20,22,43,.5);">
+  <div style="width:100%; max-width:380px; margin:0 16px; border-radius:24px; padding:28px; background:var(--paper);" onclick="event.stopPropagation()">
+    <div id="auth-modal-body"></div>
+  </div>
+</div>
 
 <div id="chat-overlay" onclick="if(event.target===this) closeChat()">
   <div class="chat-panel" onclick="event.stopPropagation()">
@@ -393,6 +401,13 @@ const STR = {
     hostPanelText:"Not enough people yet to auto-confirm. You can wait for the deadline, or start the group anyway.",
     minMaxHint:"The group is confirmed as soon as the minimum is reached — it doesn't need to hit the maximum to happen.",
     ofMin:(cur,min)=>`${cur} / ${min} to confirm`,
+    heroCardName:"Padel after class",
+    signIn:"Sign in", signOut:"Sign out",
+    signInTitle:"Sign in to JoinUp", signInSub:"We'll email you a magic link — no password needed.",
+    sendLink:"Send magic link", sending:"Sending…",
+    checkEmailTitle:"Check your inbox", checkEmailText:(email)=>`We sent a sign-in link to ${email}. Click it to continue.`,
+    close:"Close",
+    connectionErrorTitle:"Can't connect right now", connectionErrorText:"The service is temporarily unreachable. Check your internet connection and reload the page.",
   },
   fr:{
     navHome:"Accueil", navExplore:"Explorer", navCreate:"Créer", navMy:"Mes activités", navProfile:"Profil",
@@ -447,6 +462,13 @@ const STR = {
     hostPanelText:"Pas encore assez de monde pour confirmer automatiquement. Tu peux attendre la deadline, ou lancer le groupe quand même.",
     minMaxHint:"Le groupe est confirmé dès que le minimum est atteint — pas besoin d'arriver au maximum pour que ça se fasse.",
     ofMin:(cur,min)=>`${cur} / ${min} pour confirmer`,
+    heroCardName:"Padel après les cours",
+    signIn:"Se connecter", signOut:"Se déconnecter",
+    signInTitle:"Connecte-toi à JoinUp", signInSub:"On t'envoie un lien magique par email — pas de mot de passe.",
+    sendLink:"Envoyer le lien", sending:"Envoi…",
+    checkEmailTitle:"Regarde ta boîte mail", checkEmailText:(email)=>`On a envoyé un lien de connexion à ${email}. Clique dessus pour continuer.`,
+    close:"Fermer",
+    connectionErrorTitle:"Connexion impossible pour l'instant", connectionErrorText:"Le service est temporairement injoignable. Vérifie ta connexion internet et recharge la page.",
   },
   es:{
     navHome:"Inicio", navExplore:"Explorar", navCreate:"Crear", navMy:"Mis actividades", navProfile:"Perfil",
@@ -501,6 +523,13 @@ const STR = {
     hostPanelText:"Todavía no hay suficiente gente para confirmar automáticamente. Puedes esperar a la fecha límite, o iniciar el grupo igualmente.",
     minMaxHint:"El grupo se confirma en cuanto se alcanza el mínimo — no hace falta llegar al máximo para que se realice.",
     ofMin:(cur,min)=>`${cur} / ${min} para confirmar`,
+    heroCardName:"Pádel después de clase",
+    signIn:"Iniciar sesión", signOut:"Cerrar sesión",
+    signInTitle:"Inicia sesión en JoinUp", signInSub:"Te enviamos un enlace mágico por email — sin contraseña.",
+    sendLink:"Enviar enlace", sending:"Enviando…",
+    checkEmailTitle:"Revisa tu correo", checkEmailText:(email)=>`Enviamos un enlace de acceso a ${email}. Haz clic para continuar.`,
+    close:"Cerrar",
+    connectionErrorTitle:"No se puede conectar ahora", connectionErrorText:"El servicio no está disponible temporalmente. Revisa tu conexión a internet y recarga la página.",
   },
 };
 function t(key, ...args){
@@ -564,33 +593,24 @@ const CATEGORIES = [
   {id:"other", emoji:"✨"},
 ];
 const catInfo = id => CATEGORIES.find(c=>c.id===id) || CATEGORIES[CATEGORIES.length-1];
-const ME = {name:"Alex", avatar:"https://i.pravatar.cc/100?img=12"};
-const PEOPLE = [
-  {name:"Lina", avatar:"https://i.pravatar.cc/100?img=32"}, {name:"Tom", avatar:"https://i.pravatar.cc/100?img=51"},
-  {name:"Nora", avatar:"https://i.pravatar.cc/100?img=47"}, {name:"Rayan", avatar:"https://i.pravatar.cc/100?img=14"},
-  {name:"Camille", avatar:"https://i.pravatar.cc/100?img=25"}, {name:"Hugo", avatar:"https://i.pravatar.cc/100?img=59"},
-  {name:"Zoe", avatar:"https://i.pravatar.cc/100?img=29"},
-];
-let activities = [
-  {id:"a1", category:"padel", name:"Padel after class", date:"Today", time:"18:30", location:"Bordeaux Padel Club",
-   current:3, min:4, max:4, confirmBy:"Fri 17:00", price:12, description:"Casual padel session right after uni. All levels welcome, we mostly play for fun and grab a drink after.",
-   host:PEOPLE[0], participants:[PEOPLE[0],PEOPLE[1],PEOPLE[2]], popular:true},
-  {id:"a2", category:"football", name:"Football 5v5", date:"Tomorrow", time:"20:00", location:"Stade Chaban, Bordeaux",
-   current:7, min:8, max:10, confirmBy:"Tomorrow 18:00", price:8, description:"Friendly 5-a-side, indoor pitch booked. Bring both a light and dark shirt just in case.",
-   host:PEOPLE[3], participants:[PEOPLE[3],PEOPLE[1],PEOPLE[4],PEOPLE[5],PEOPLE[6],PEOPLE[0],PEOPLE[2]], popular:true},
-  {id:"a3", category:"basketball", name:"3v3 pickup run", date:"Sat", time:"16:00", location:"Playground Meriadeck",
-   current:4, min:4, max:6, confirmBy:"Sat 14:00", price:0, description:"Half-court games, winner stays. Bring your own ball if you have one.",
-   host:PEOPLE[4], participants:[PEOPLE[4],PEOPLE[5],PEOPLE[2],PEOPLE[6]]},
-  {id:"a4", category:"golf", name:"9 holes, relaxed pace", date:"Sun", time:"09:00", location:"Golf de Bordeaux-Lac",
-   current:3, min:4, max:4, confirmBy:"Sat 20:00", price:35, description:"Looking for a fourth for a chill Sunday morning round. Beginners genuinely welcome.",
-   host:PEOPLE[6], participants:[PEOPLE[6],PEOPLE[3],PEOPLE[1]]},
-  {id:"a5", category:"boardgames", name:"Board game night", date:"Fri", time:"19:30", location:"Le Node, Bordeaux",
-   current:4, min:3, max:8, confirmBy:"Fri 18:00", price:5, description:"Catan, Wingspan and a couple of party games. Snacks are on us, table's booked till midnight.",
-   host:PEOPLE[2], participants:[PEOPLE[2],PEOPLE[5],PEOPLE[0],PEOPLE[4]], isNew:true},
-  {id:"a6", category:"running", name:"Sunset riverside run", date:"Mon", time:"19:00", location:"Quais de Bordeaux",
-   current:1, min:2, max:6, confirmBy:"Mon 12:00", price:0, description:"Easy 6km pace along the river, then stretching. Great for meeting new people, not a race.",
-   host:PEOPLE[1], participants:[PEOPLE[1]], isNew:true},
-];
+
+/* ===================== SUPABASE ===================== */
+const SUPABASE_URL = "https://qdtvbgkykkdxkjsfcaey.supabase.co";
+const SUPABASE_KEY = "sb_publishable_QoVh-UMY7UQY1LSr56A9ZA_Ex3LqI9n";
+let sb = null;
+let sbReady = false;
+try {
+  if (window.supabase && window.supabase.createClient) {
+    sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    sbReady = true;
+  }
+} catch (e) { console.error("Supabase init failed:", e); }
+
+function avatarFor(id, name){
+  return `https://ui-avatars.com/api/?name=${encodeURIComponent(name||"?")}&background=random&bold=true`;
+}
+
+let activities = []; // populated live from Supabase — never edited directly, always via loadActivities()
 
 /* ===================== STATE ===================== */
 const state = {
@@ -600,7 +620,144 @@ const state = {
   q:"", cat:"all", onlyAvailable:false, myTab:"created",
   createForm:{category:"", name:"", date:"", time:"", location:"", need:4, min:4, confirmBy:"", price:"", description:""},
   chatFor:null, chatMessages:{},
+  user:null,       // {id, email, name, avatar} once logged in, else null
+  authBusy:false, authSentTo:null, loading:true,
 };
+
+/* ===================== DATA LOADING (Supabase) ===================== */
+async function loadActivities(){
+  if (!sbReady) { state.loading = false; return; }
+  const { data, error } = await sb
+    .from("activities")
+    .select(`
+      id, category, name, description, location, activity_date, activity_time,
+      min_players, max_players, price, confirm_by, host_id, created_at,
+      host:profiles!activities_host_id_fkey ( id, name, avatar_url ),
+      participants ( user_id, profiles!participants_user_id_fkey ( id, name, avatar_url ) )
+    `)
+    .order("created_at", { ascending: false });
+
+  if (error) { console.error("loadActivities error:", error); return; }
+
+  activities = (data || []).map(row => ({
+    id: row.id,
+    category: row.category,
+    name: row.name,
+    description: row.description || "",
+    location: row.location,
+    date: row.activity_date,
+    time: row.activity_time,
+    min: row.min_players,
+    max: row.max_players,
+    price: Number(row.price) || 0,
+    confirmBy: row.confirm_by || "",
+    host: row.host
+      ? { id: row.host.id, name: row.host.name, avatar: row.host.avatar_url || avatarFor(row.host.id, row.host.name) }
+      : { id: row.host_id, name: "?", avatar: avatarFor(row.host_id, "?") },
+    participants: (row.participants || []).map(p => ({
+      id: p.profiles?.id || p.user_id,
+      name: p.profiles?.name || "?",
+      avatar: p.profiles?.avatar_url || avatarFor(p.profiles?.id || p.user_id, p.profiles?.name || "?"),
+    })),
+    current: (row.participants || []).length,
+  }));
+
+  state.joinedIds = new Set(activities.filter(a => state.user && a.participants.some(p => p.id === state.user.id)).map(a => a.id));
+  state.createdIds = new Set(activities.filter(a => state.user && a.host.id === state.user.id).map(a => a.id));
+}
+
+let realtimeChannel = null;
+function subscribeRealtime(){
+  if (!sbReady || realtimeChannel) return;
+  realtimeChannel = sb.channel("joinup-live")
+    .on("postgres_changes", { event: "*", schema: "public", table: "activities" }, async () => { await loadActivities(); render(); })
+    .on("postgres_changes", { event: "*", schema: "public", table: "participants" }, async () => { await loadActivities(); render(); })
+    .subscribe();
+}
+
+/* ===================== AUTH ===================== */
+async function onAuthed(authUser){
+  if (!sbReady) return;
+  let { data: profile } = await sb.from("profiles").select("*").eq("id", authUser.id).single();
+  state.user = {
+    id: authUser.id,
+    email: authUser.email,
+    name: (profile && profile.name) || (authUser.email || "").split("@")[0],
+    avatar: (profile && profile.avatar_url) || avatarFor(authUser.id, (profile && profile.name) || authUser.email),
+  };
+  await loadActivities();
+  render();
+}
+async function initAuth(){
+  if (!sbReady) return;
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) await onAuthed(session.user);
+  sb.auth.onAuthStateChange(async (_event, session) => {
+    if (session) { await onAuthed(session.user); }
+    else { state.user = null; render(); }
+  });
+}
+function openAuthModal(){
+  state.authSentTo = null;
+  renderAuthModal();
+  document.getElementById("auth-overlay").style.display = "flex";
+}
+function closeAuthModal(){
+  document.getElementById("auth-overlay").style.display = "none";
+}
+function renderAuthModal(){
+  const body = document.getElementById("auth-modal-body");
+  if (!sbReady){
+    body.innerHTML = `<div style="text-align:center;">
+      <div style="font-size:32px; margin-bottom:12px;">⚠️</div>
+      <div class="fd" style="font-weight:700; font-size:17px; margin-bottom:8px;">${esc(t('connectionErrorTitle'))}</div>
+      <div style="font-size:14px; color:var(--slate); margin-bottom:20px;">${esc(t('connectionErrorText'))}</div>
+      <button class="btn btn-secondary btn-full" onclick="closeAuthModal()">${esc(t('close'))}</button>
+    </div>`;
+    return;
+  }
+  if (state.authSentTo){
+    body.innerHTML = `
+      <div style="text-align:center;">
+        <div style="font-size:32px; margin-bottom:12px;">📩</div>
+        <div class="fd" style="font-weight:700; font-size:18px; margin-bottom:8px;">${esc(t('checkEmailTitle'))}</div>
+        <div style="font-size:14px; color:var(--slate); margin-bottom:20px;">${esc(t('checkEmailText', state.authSentTo))}</div>
+        <button class="btn btn-secondary btn-full" onclick="closeAuthModal()">${esc(t('close'))}</button>
+      </div>`;
+    return;
+  }
+  body.innerHTML = `
+    <div class="fd" style="font-weight:700; font-size:20px; margin-bottom:6px;">${esc(t('signInTitle'))}</div>
+    <div style="font-size:13.5px; color:var(--slate); margin-bottom:18px;">${esc(t('signInSub'))}</div>
+    <input id="auth-email-input" type="email" placeholder="you@example.com" style="width:100%; background:var(--mist); border:none; border-radius:14px; padding:13px 16px; font-size:14px; outline:none; margin-bottom:12px;">
+    <button class="btn btn-primary btn-full" ${state.authBusy?"disabled":""} onclick="sendMagicLink()">${state.authBusy?esc(t('sending')):esc(t('sendLink'))}</button>
+  `;
+}
+async function sendMagicLink(){
+  if (!sbReady) return;
+  const input = document.getElementById("auth-email-input");
+  const email = (input.value||"").trim();
+  if(!email || !email.includes("@")) return;
+  state.authBusy = true; renderAuthModal();
+  const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.href.split("#")[0] } });
+  state.authBusy = false;
+  if (error) { console.error(error); alert(error.message); renderAuthModal(); return; }
+  state.authSentTo = email;
+  renderAuthModal();
+}
+async function signOut(){
+  if (!sbReady) return;
+  await sb.auth.signOut();
+  state.user = null;
+  go("home");
+}
+function renderAuthSlot(){
+  const html = state.user
+    ? `<img class="nav-avatar" src="${state.user.avatar}" onclick="go('profile')" title="${esc(state.user.name)}">`
+    : `<button class="btn btn-primary" style="padding:10px 18px; font-size:13.5px;" onclick="openAuthModal()">${esc(t('signIn'))}</button>`;
+  const d = document.getElementById("auth-slot-desktop"); if (d) d.innerHTML = html;
+  const m = document.getElementById("auth-slot-mobile"); if (m) m.innerHTML = html;
+}
 
 /* ===================== HELPERS ===================== */
 function esc(s){ return (s??"").toString().replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
@@ -695,9 +852,9 @@ function pageHome(){
       <div class="float-card anim-float">
         <div class="float-card-top">
           <div class="float-card-icon">🎾</div>
-          <div><div class="float-card-name">${esc(aName({id:'a1',name:'Padel after class'}))}</div><div class="float-card-meta">${esc(t('heroCardMeta'))}</div></div>
+          <div><div class="float-card-name">${esc(t('heroCardName'))}</div><div class="float-card-meta">${esc(t('heroCardMeta'))}</div></div>
         </div>
-        <div class="float-row">${avatarStack([PEOPLE[0],PEOPLE[1],PEOPLE[2]])}<span class="float-count">3/4</span></div>
+        <div class="float-row"><div class="avatar-stack"><img src="${avatarFor('h1','L')}"><img src="${avatarFor('h2','T')}"><img src="${avatarFor('h3','A')}"></div><span class="float-count">3/4</span></div>
         ${pill(t('badgeSpotLeft1'),"var(--coral)","var(--paper)")}
       </div>
     </div>
@@ -901,20 +1058,29 @@ function pageMy(){
 }
 
 function pageProfile(){
+  if(!state.user){
+    return `<div class="profile-wrap"><div class="empty-box"><div class="empty-emoji">🔒</div>
+      <div class="empty-title fd">${esc(t('signInTitle'))}</div>
+      <div class="empty-text">${esc(t('signInSub'))}</div>
+      <div style="margin-top:20px;"><button class="btn btn-primary" onclick="openAuthModal()">${esc(t('signIn'))}</button></div>
+    </div></div>`;
+  }
   const recent = activities.filter(a=>state.createdIds.has(a.id)||state.joinedIds.has(a.id));
+  const hostedCount = activities.filter(a=>state.createdIds.has(a.id)).length;
+  const joinedCount = activities.filter(a=>state.joinedIds.has(a.id)).length;
   return `
   <div class="profile-wrap">
     <div class="profile-hero">
-      <img src="${ME.avatar}">
+      <img src="${state.user.avatar}">
       <div>
-        <div class="profile-name">Alex, 20</div>
+        <div class="profile-name">${esc(state.user.name)}</div>
         <div class="profile-loc">${esc(t('profileLoc'))}</div>
-        <div class="profile-tags">${pill(`🎾 ${esc(catLabel('padel'))}`,"var(--ink2)","var(--court)")}${pill(`⚽ ${esc(catLabel('football'))}`,"var(--ink2)","var(--court)")}${pill(`🏌️ ${esc(catLabel('golf'))}`,"var(--ink2)","var(--court)")}</div>
+        <button class="btn btn-secondary" style="padding:8px 16px; font-size:12.5px; margin-top:8px;" onclick="signOut()">${esc(t('signOut'))}</button>
       </div>
     </div>
     <div class="profile-stats">
-      <div class="pstat"><div class="pstat-num">24</div><div class="pstat-label">${esc(t('statsActivities'))}</div></div>
-      <div class="pstat"><div class="pstat-num">98%</div><div class="pstat-label">${esc(t('statsAttendance'))}</div></div>
+      <div class="pstat"><div class="pstat-num">${hostedCount+joinedCount}</div><div class="pstat-label">${esc(t('statsActivities'))}</div></div>
+      <div class="pstat"><div class="pstat-num">${hostedCount}</div><div class="pstat-label">${esc(t('hostingPill'))}</div></div>
     </div>
     <div class="recent-title fd">${esc(t('recentActivities'))}</div>
     ${recent.length===0 ? `<div class="empty-box" style="padding:40px 20px;"><div class="empty-text">${esc(t('nothingYet'))}</div></div>` :
@@ -930,6 +1096,7 @@ function pageProfile(){
 /* ===================== RENDER / ROUTER ===================== */
 function render(){
   renderNav();
+  renderAuthSlot();
   const root = document.getElementById("page-root");
   const pages = {home:pageHome, explore:pageExplore, create:pageCreate, detail:pageDetail, my:pageMy, profile:pageProfile};
   root.innerHTML = (pages[state.page] || pageHome)();
@@ -940,19 +1107,23 @@ function render(){
 function go(page, id){
   if(id) state.selectedId = id;
   if(page!=="create") state.createdConfirmation = null;
+  if((page==="create" || page==="my" || page==="profile") && !state.user){ openAuthModal(); return; }
   state.page = page;
   render();
   window.scrollTo({top:0, behavior:"smooth"});
 }
 
 /* ===================== ACTIONS ===================== */
-function joinActivity(id){
+async function joinActivity(id){
+  if(!state.user){ openAuthModal(); return; }
   const a = activities.find(x=>x.id===id);
   if(!a || a.current>=a.max) return;
-  a.current += 1; a.participants = [...a.participants, ME];
+  const { error } = await sb.from("participants").insert({ activity_id:id, user_id: state.user.id });
+  if(error){ console.error(error); return; }
   state.joinedIds.add(id);
   state.justJoinedId = id;
   showToast(t('youreIn'));
+  await loadActivities();
   render();
   setTimeout(()=>{ state.justJoinedId=null; if(state.page==="detail") render(); }, 3000);
 }
@@ -977,16 +1148,21 @@ function stepMin(delta){
   state.createForm.min = Math.max(2, Math.min(state.createForm.need, state.createForm.min + delta));
   render();
 }
-function submitCreate(){
+async function submitCreate(){
+  if(!state.user){ openAuthModal(); return; }
   const f = state.createForm;
   if(!(f.category&&f.name&&f.date&&f.time&&f.location)) return;
-  const id = "u"+Date.now();
-  const newActivity = { id, category:f.category, name:f.name, date:f.date, time:f.time, location:f.location,
-    current:1, min:Number(f.min)||2, max:Number(f.need), confirmBy:f.confirmBy||"", price:Number(f.price)||0, description:f.description||"",
-    host:ME, participants:[ME], isNew:true };
-  activities.unshift(newActivity);
-  state.createdIds.add(id); state.joinedIds.add(id);
-  state.createdConfirmation = newActivity;
+  const { data, error } = await sb.from("activities").insert({
+    category:f.category, name:f.name, description:f.description||"", location:f.location,
+    activity_date:f.date, activity_time:f.time,
+    min_players:Number(f.min)||2, max_players:Number(f.need),
+    price:Number(f.price)||0, confirm_by:f.confirmBy||"", host_id: state.user.id,
+  }).select().single();
+  if(error){ console.error(error); alert(error.message); return; }
+  const { error: joinErr } = await sb.from("participants").insert({ activity_id:data.id, user_id: state.user.id });
+  if(joinErr) console.error(joinErr);
+  await loadActivities();
+  state.createdConfirmation = activities.find(a=>a.id===data.id) || null;
   state.createForm = {category:"", name:"", date:"", time:"", location:"", need:4, min:4, confirmBy:"", price:"", description:""};
   render();
 }
@@ -995,14 +1171,13 @@ function setCat(c){ state.cat=c; render(); }
 function toggleAvailable(){ state.onlyAvailable=!state.onlyAvailable; render(); }
 function setMyTab(tb){ state.myTab=tb; render(); }
 
-/* chat */
+/* chat (local to this session — coordination happens in WhatsApp) */
 function openChat(id){
   state.chatFor = id;
   if(!state.chatMessages[id]){
     const a = activities.find(x=>x.id===id);
     state.chatMessages[id] = [
       {from:a.host.name, avatar:a.host.avatar, text:t('chatMsg1')},
-      {from:PEOPLE[1].name, avatar:PEOPLE[1].avatar, text:t('chatMsg2')},
     ];
   }
   document.getElementById("chat-title").textContent = aName(activities.find(x=>x.id===id)) + " · " + t('chatSuffix');
@@ -1018,8 +1193,8 @@ function renderChat(){
 }
 function sendChat(){
   const inp = document.getElementById("chat-draft");
-  if(!inp.value.trim()) return;
-  state.chatMessages[state.chatFor].push({from:ME.name, avatar:ME.avatar, text:inp.value});
+  if(!inp.value.trim() || !state.user) return;
+  state.chatMessages[state.chatFor].push({from:state.user.name, avatar:state.user.avatar, text:inp.value});
   inp.value="";
   renderChat();
 }
@@ -1034,7 +1209,12 @@ function showToast(msg){
 
 /* ===================== INIT ===================== */
 document.documentElement.lang = state.lang;
-render();
+(async function init(){
+  await loadActivities();
+  render();
+  subscribeRealtime();
+  await initAuth();
+})();
 </script>
 </body>
 </html>
